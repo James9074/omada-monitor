@@ -26,20 +26,6 @@ Ensure you have the following installed:
     pip install -r requirements.txt
     ```
 
-### Configuration
-
-1. `cp config.json.example config.json`
-2. Fill out the following in `config.json`:
-    ```json
-    {
-        "base_url": "http://<domain_or_ip>",
-        "site": "Default",
-        "omada_controller_id": "<controller_id>"
-    }
-    ```
-
-Note that the controller ID can be found at http://<omada_url>/api/info as `omadacId`
-
 ### Running the Application
 
 1. Run the application using the following command:
@@ -47,14 +33,16 @@ Note that the controller ID can be found at http://<omada_url>/api/info as `omad
     python omada_monitor.py
     ```
 
-2. The application will attempt to auto-login using saved credentials. If no credentials are saved or auto-login fails, a login dialog will appear.
+2. The application will attempt to auto-login using saved credentials. If no credentials are saved or auto-login fails, a login dialog will appear. You'll need to entire the base url (http://<ip_or_domain.tld>) and site (Usually `Default`).
+
+The data will refresh every 30 seconds, or when "Refresh" is clicked.
 
 ### Saving Credentials
 
 Creds are saved locally using Fernet encryption under ~/.omada-monitor Preferably, we'd store this in the Mac's keyring. Until then, you might want to use a read-only Omada controller user. To save your creds:
 
-1. Enter your Omada Controller username and password in the login dialog.
-2. Click the "Save Credentials" button to securely save your credentials for future use in ~/.omada-monitor/credentials.enc
+1. Enter your Omada Controller config in the login dialog.
+2. Click the "Save and Login" button to securely save your credentials for future use in ~/.omada-monitor/credentials.enc
 
 ## Building (macos only)
 

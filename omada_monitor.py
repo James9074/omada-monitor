@@ -6,7 +6,7 @@ import json
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                            QHBoxLayout, QTableWidget, QTableWidgetItem, QPushButton, 
                            QLabel, QStatusBar, QHeaderView, QDialog, QLineEdit,
-                           QFormLayout, QMessageBox)
+                           QFormLayout, QMessageBox, QCheckBox)
 from PyQt6.QtCore import Qt, QTimer, QDateTime
 from omada import Omada
 import collections
@@ -38,15 +38,15 @@ class CredentialManager:
         self.key = Fernet.generate_key()
         with open(self.key_file, 'wb') as f:
             f.write(self.key)
-        os.chmod(self.key_file, 0o600)
-
-    def save_credentials(self, username, password, baseurl, site):
+        os.chmod(self.key_file, 0o600)    
+    def save_credentials(self, username, password, baseurl, site, verify):
         """Encrypt and save credentials and config"""
         data = {
             'username': username,
             'password': password,
             'baseurl': baseurl,
-            'site': site
+            'site': site,
+            'verify': verify
         }
         encrypted_data = self.fernet.encrypt(json.dumps(data).encode())
         with open(self.config_file, 'wb') as f:
@@ -65,11 +65,12 @@ class CredentialManager:
                     data.get('password'),
                     data.get('baseurl'),
                     data.get('site'),
+                    data.get('verify', False)  # Default to False for backward compatibility
                 )
         except Exception as e:
             print(f"Error loading credentials: {e}")
-        return None, None, None, None, None
-
+        return None, None, None, None, False
+    
 class SortableIPItem(QTableWidgetItem):
     def __init__(self, display_text, ip_addr):
         super().__init__(display_text)
@@ -99,7 +100,7 @@ class SortableIPItem(QTableWidgetItem):
     
 class LoginDialog(QDialog):
     def __init__(self, parent=None, saved_username="", saved_password="", 
-                 saved_baseurl="", saved_site=""):
+                 saved_baseurl="", saved_site="", saved_verify=False):
         super().__init__(parent)
         self.setWindowTitle("Omada Controller Login")
         self.setMinimumWidth(400)
@@ -112,6 +113,8 @@ class LoginDialog(QDialog):
         self.password = QLineEdit(saved_password)
         self.baseurl = QLineEdit(saved_baseurl or "")
         self.site = QLineEdit(saved_site or "Default")
+        self.verify = QCheckBox("Verify Certificate")
+        self.verify.setChecked(saved_verify)
         
         self.password.setEchoMode(QLineEdit.EchoMode.Password)
         self.login_button = QPushButton("Save and Login")
@@ -121,6 +124,7 @@ class LoginDialog(QDialog):
         layout.addRow("Password:", self.password)
         layout.addRow("Base URL:", self.baseurl)        
         layout.addRow("Site:", self.site)
+        layout.addRow("", self.verify)
         
         button_layout = QHBoxLayout()        
         button_layout.addWidget(self.login_button)
@@ -129,7 +133,7 @@ class LoginDialog(QDialog):
         self.setLayout(layout)
         
         # Connect signals
-        self.login_button.clicked.connect(self.accept)
+        self.login_button.clicked.connect(self.accept)        
         
         self.credential_manager = CredentialManager()
 
@@ -143,7 +147,8 @@ class LoginDialog(QDialog):
             self.username.text(),
             self.password.text(),
             self.baseurl.text(),
-            self.site.text()
+            self.site.text(),
+            self.verify.isChecked()
         )
 
     def get_credentials(self):
@@ -151,9 +156,10 @@ class LoginDialog(QDialog):
             self.username.text(),
             self.password.text(),
             self.baseurl.text(),
-            self.site.text()
+            self.site.text(),
+            self.verify.isChecked()
         )
-    
+      
 class SortableTableItem(QTableWidgetItem):
     def __init__(self, display_text, sort_key):
         super().__init__(display_text)
@@ -197,12 +203,14 @@ class OmadaClientMonitor(QMainWindow):
 
     def try_auto_login(self):
         """Attempt to login with saved credentials"""
-        saved_username, saved_password, saved_baseurl, saved_site= self.credential_manager.load_credentials()
-        if all([saved_username, saved_password, saved_baseurl, saved_site]):
+        saved_username, saved_password, saved_baseurl, saved_site, saved_verify = self.credential_manager.load_credentials()
+        if all([saved_username, saved_password, saved_baseurl, saved_site is not None]):
             try:
-                self.omada = Omada(baseurl=saved_baseurl,
+                self.omada = Omada(
+                    baseurl=saved_baseurl,
                     site=saved_site,
-                    verify=False)
+                    verify=saved_verify
+                )
                 self.omada.login(username=saved_username, password=saved_password)
                 return True
             except Exception as e:
@@ -211,18 +219,19 @@ class OmadaClientMonitor(QMainWindow):
 
     def show_login(self):
         # Load saved credentials
-        saved_username, saved_password, saved_baseurl, saved_site= self.credential_manager.load_credentials()
+        saved_username, saved_password, saved_baseurl, saved_site, saved_verify = self.credential_manager.load_credentials()
         
         dialog = LoginDialog(
             self, saved_username, saved_password,
-            saved_baseurl, saved_site
+            saved_baseurl, saved_site, saved_verify
         )
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            username, password, baseurl, site = dialog.get_credentials()
+            username, password, baseurl, site, verify = dialog.get_credentials()
             try:
-                self.omada = Omada(baseurl=baseurl,
+                self.omada = Omada(
+                    baseurl=baseurl,
                     site=site,
-                    verify=False
+                    verify=verify
                 )
                 self.omada.login(username=username, password=password)
                 return True
