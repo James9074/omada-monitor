@@ -1,7 +1,7 @@
 
 # Omada Client Monitor
 
-The Omada interface doesn't allow for quick access to connected clients. This is annoying when trying to determine the IP of a newly connected IoT device. 
+The Omada interface doesn't allow for quick access to connected clients. You must navigate from the home screen _every time_ you want to see a newly connected client. This is annoying when trying to determine the IP of a newly connected IoT device. 
 
 This desktop application refreses clients connected to an Omada Controller. It provides a graphical interface to view client details such as IP address, status, network name, and traffic statistics. Simply login with your controller creds, and all connected clients will be shown.
 
