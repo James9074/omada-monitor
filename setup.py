@@ -45,13 +45,13 @@ OPTIONS = {
         'CFBundleName': "Omada Monitor",
         'CFBundleDisplayName': "Omada Monitor",
         'CFBundleGetInfoString': "Monitor Omada network clients",
-        'CFBundleIdentifier': "com.yourcompany.omadamonitor",
+        'CFBundleIdentifier': "com.wlan1.omadamonitor",
         'CFBundleVersion': "1.0.0",
         'CFBundleShortVersionString': "1.0.0",
         'NSHighResolutionCapable': True,
         'NSRequiresAquaSystemAppearance': False,
         'LSMinimumSystemVersion': '10.15',
-        'NSHumanReadableCopyright': "Copyright © 2025, Your Name, All Rights Reserved"
+        'NSHumanReadableCopyright': "Copyright © 2025, wlan1, All Rights Reserved"
     }
 }
 
