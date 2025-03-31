@@ -1,6 +1,8 @@
 
 # Omada Client Monitor
 
+_(See [releases](https://github.com/James9074/omada-monitor/releases/tag/1.0.0) for the macos .app download)_
+
 The Omada interface doesn't allow for quick access to connected clients. You must navigate from the home screen _every time_ you want to see a newly connected client. This is annoying when trying to determine the IP of a newly connected IoT device. 
 
 This desktop application refreses clients connected to an Omada Controller. It provides a graphical interface to view client details such as IP address, status, network name, and traffic statistics. Simply login with your controller creds, and all connected clients will be shown.
