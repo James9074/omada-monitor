@@ -17,7 +17,8 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                            QFormLayout, QMessageBox, QCheckBox, QFrame, QGraphicsOpacityEffect,
                            QStackedWidget, QSizePolicy)
 from PyQt6.QtCore import Qt, QTimer, QDateTime, QPropertyAnimation, QEasingCurve, pyqtSignal, QThread
-from PyQt6.QtGui import QColor, QPalette, QFont, QIcon
+from PyQt6.QtGui import QColor, QPalette, QFont, QIcon, QShortcut, QKeySequence
+from PyQt6.QtWidgets import QToolTip
 
 # Only import Omada and cryptography when not in demo mode
 if not DEMO_MODE:
@@ -35,40 +36,40 @@ class MockOmada:
     """Mock Omada controller for demo/testing purposes"""
 
     MOCK_CLIENTS = [
-        {'name': 'iPhone 14 Pro', 'ip': '192.168.1.101', 'active': True, 'connectDevType': 'ap',
+        {'name': 'iPhone 14 Pro', 'ip': '192.168.1.101', 'mac': 'A4:83:E7:2B:9F:01', 'active': True, 'connectDevType': 'ap',
          'ssid': 'HomeNetwork', 'apName': 'Living Room AP', 'activity': 2500000,
          'trafficDown': 15000000000, 'trafficUp': 3200000000, 'uptime': 345600},
-        {'name': 'MacBook Pro', 'ip': '192.168.1.102', 'active': True, 'connectDevType': 'ap',
+        {'name': 'MacBook Pro', 'ip': '192.168.1.102', 'mac': '3C:22:FB:8A:4D:E2', 'active': True, 'connectDevType': 'ap',
          'ssid': 'HomeNetwork', 'apName': 'Office AP', 'activity': 8500000,
          'trafficDown': 125000000000, 'trafficUp': 28000000000, 'uptime': 604800},
-        {'name': 'iPad Air', 'ip': '192.168.1.103', 'active': True, 'connectDevType': 'ap',
+        {'name': 'iPad Air', 'ip': '192.168.1.103', 'mac': 'F0:18:98:C3:7E:5A', 'active': True, 'connectDevType': 'ap',
          'ssid': 'HomeNetwork', 'apName': 'Living Room AP', 'activity': 1200000,
          'trafficDown': 8500000000, 'trafficUp': 950000000, 'uptime': 172800},
-        {'name': 'Samsung Smart TV', 'ip': '192.168.1.150', 'active': True, 'connectDevType': 'ap',
+        {'name': 'Samsung Smart TV', 'ip': '192.168.1.150', 'mac': '8C:79:F5:6D:B2:44', 'active': True, 'connectDevType': 'ap',
          'ssid': 'HomeNetwork', 'apName': 'Living Room AP', 'activity': 25000000,
          'trafficDown': 450000000000, 'trafficUp': 2500000000, 'uptime': 1209600},
-        {'name': 'PlayStation 5', 'ip': '192.168.1.151', 'active': True, 'connectDevType': 'switch',
+        {'name': 'PlayStation 5', 'ip': '192.168.1.151', 'mac': '78:C8:81:A9:3F:12', 'active': True, 'connectDevType': 'switch',
          'networkName': 'Gaming VLAN', 'switchName': 'Main Switch', 'port': 3, 'activity': 15000000,
          'trafficDown': 850000000000, 'trafficUp': 125000000000, 'uptime': 86400},
-        {'name': 'Work Laptop', 'ip': '192.168.1.104', 'active': True, 'connectDevType': 'ap',
+        {'name': 'Work Laptop', 'ip': '192.168.1.104', 'mac': 'DC:A6:32:5E:91:F7', 'active': True, 'connectDevType': 'ap',
          'ssid': 'HomeNetwork', 'apName': 'Office AP', 'activity': 5500000,
          'trafficDown': 95000000000, 'trafficUp': 18000000000, 'uptime': 432000},
-        {'name': 'Smart Thermostat', 'ip': '192.168.1.200', 'active': True, 'connectDevType': 'ap',
+        {'name': 'Smart Thermostat', 'ip': '192.168.1.200', 'mac': '18:B4:30:E8:7C:2D', 'active': True, 'connectDevType': 'ap',
          'ssid': 'IoT_Network', 'apName': 'Basement AP', 'activity': 15000,
          'trafficDown': 125000000, 'trafficUp': 85000000, 'uptime': 2592000},
-        {'name': 'Ring Doorbell', 'ip': '192.168.1.201', 'active': True, 'connectDevType': 'ap',
+        {'name': 'Ring Doorbell', 'ip': '192.168.1.201', 'mac': '24:6F:28:9A:4B:C8', 'active': True, 'connectDevType': 'ap',
          'ssid': 'IoT_Network', 'apName': 'Living Room AP', 'activity': 850000,
          'trafficDown': 28000000000, 'trafficUp': 15000000000, 'uptime': 2592000},
-        {'name': 'Philips Hue Bridge', 'ip': '192.168.1.202', 'active': True, 'connectDevType': 'switch',
+        {'name': 'Philips Hue Bridge', 'ip': '192.168.1.202', 'mac': 'EC:B5:FA:D1:6E:33', 'active': True, 'connectDevType': 'switch',
          'networkName': 'IoT VLAN', 'switchName': 'Main Switch', 'port': 8, 'activity': 5000,
          'trafficDown': 50000000, 'trafficUp': 25000000, 'uptime': 5184000},
-        {'name': 'Guest iPhone', 'ip': '192.168.2.50', 'active': True, 'connectDevType': 'ap',
+        {'name': 'Guest iPhone', 'ip': '192.168.2.50', 'mac': '9C:35:EB:7F:A2:89', 'active': True, 'connectDevType': 'ap',
          'ssid': 'GuestNetwork', 'apName': 'Living Room AP', 'activity': 3500000,
          'trafficDown': 2500000000, 'trafficUp': 450000000, 'uptime': 7200},
-        {'name': 'Sonos Speaker', 'ip': '192.168.1.160', 'active': True, 'connectDevType': 'ap',
+        {'name': 'Sonos Speaker', 'ip': '192.168.1.160', 'mac': '54:2A:1B:8C:D4:56', 'active': True, 'connectDevType': 'ap',
          'ssid': 'HomeNetwork', 'apName': 'Living Room AP', 'activity': 2000000,
          'trafficDown': 85000000000, 'trafficUp': 1500000000, 'uptime': 1814400},
-        {'name': 'NAS Server', 'ip': '192.168.1.10', 'active': True, 'connectDevType': 'switch',
+        {'name': 'NAS Server', 'ip': '192.168.1.10', 'mac': 'B8:27:EB:3A:C5:7D', 'active': True, 'connectDevType': 'switch',
          'networkName': 'Server VLAN', 'switchName': 'Main Switch', 'port': 1, 'activity': 45000000,
          'trafficDown': 2500000000000, 'trafficUp': 1800000000000, 'uptime': 7776000},
     ]
@@ -868,7 +869,7 @@ class OmadaClientMonitor(QMainWindow):
         search_layout = QHBoxLayout()
         self.search_box = QLineEdit()
         self.search_box.setObjectName("searchBox")
-        self.search_box.setPlaceholderText("Search clients...")
+        self.search_box.setPlaceholderText("Search by name, IP, or MAC...")
         self.search_box.textChanged.connect(self._filter_clients)
         self.search_box.setClearButtonEnabled(True)
         search_layout.addWidget(self.search_box)
@@ -909,6 +910,10 @@ class OmadaClientMonitor(QMainWindow):
         self.table.setSortingEnabled(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setShowGrid(False)
+
+        # Click-to-copy IP address
+        self.table.cellClicked.connect(self._on_cell_clicked)
+
         self.stack.addWidget(self.table)
 
         # Empty state
@@ -955,8 +960,27 @@ class OmadaClientMonitor(QMainWindow):
         self.timer.timeout.connect(self.refresh_data)
         self.timer.start(30000)
 
+        # Keyboard shortcuts
+        # Ctrl/Cmd+F to focus search
+        self.search_shortcut = QShortcut(QKeySequence.StandardKey.Find, self)
+        self.search_shortcut.activated.connect(self._focus_search)
+
+        # Escape to clear search (when in search box)
+        self.search_box.installEventFilter(self)
+
+        # Enter to copy selected IP
+        self.copy_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Return), self)
+        self.copy_shortcut.activated.connect(self._copy_selected_ip)
+
+        # Also allow Ctrl/Cmd+C to copy IP when row selected
+        self.copy_ip_shortcut = QShortcut(QKeySequence.StandardKey.Copy, self)
+        self.copy_ip_shortcut.activated.connect(self._copy_selected_ip)
+
         # Initial data load
         self.refresh_data()
+
+        # Auto-focus search box for quick lookups
+        QTimer.singleShot(100, self._focus_search)
 
     def _show_login(self):
         """Show login dialog for settings changes"""
@@ -985,6 +1009,70 @@ class OmadaClientMonitor(QMainWindow):
         self._current_filter = text.lower()
         self._display_clients(self._all_clients)
 
+    def _focus_search(self):
+        """Focus the search box and select all text"""
+        self.search_box.setFocus()
+        self.search_box.selectAll()
+
+    def eventFilter(self, obj, event):
+        """Handle keyboard events for search box"""
+        from PyQt6.QtCore import QEvent
+        if obj == self.search_box and event.type() == QEvent.Type.KeyPress:
+            if event.key() == Qt.Key.Key_Escape:
+                self.search_box.clear()
+                self.table.setFocus()
+                return True
+            elif event.key() in (Qt.Key.Key_Down, Qt.Key.Key_Up):
+                # Move focus to table for navigation
+                self.table.setFocus()
+                if self.table.rowCount() > 0:
+                    current_row = self.table.currentRow()
+                    if current_row < 0:
+                        self.table.selectRow(0)
+                    elif event.key() == Qt.Key.Key_Down:
+                        next_row = min(current_row + 1, self.table.rowCount() - 1)
+                        self.table.selectRow(next_row)
+                    else:
+                        prev_row = max(current_row - 1, 0)
+                        self.table.selectRow(prev_row)
+                return True
+        return super().eventFilter(obj, event)
+
+    def _on_cell_clicked(self, row, column):
+        """Handle cell click - copy IP if IP column clicked"""
+        # Column 1 is IP address
+        if column == 1:
+            self._copy_ip_at_row(row)
+
+    def _copy_selected_ip(self):
+        """Copy IP address of the selected row to clipboard"""
+        selected_rows = self.table.selectionModel().selectedRows()
+        if selected_rows:
+            row = selected_rows[0].row()
+            self._copy_ip_at_row(row)
+
+    def _copy_ip_at_row(self, row):
+        """Copy IP address at given row and show feedback"""
+        ip_item = self.table.item(row, 1)  # Column 1 is IP
+        if ip_item:
+            ip_text = ip_item.text()
+            if ip_text and ip_text != '--':
+                clipboard = QApplication.clipboard()
+                clipboard.setText(ip_text)
+                self._show_copy_feedback(row, ip_text)
+
+    def _show_copy_feedback(self, row, ip_text):
+        """Show visual feedback when IP is copied"""
+        # Get the position of the IP cell for tooltip
+        ip_item = self.table.item(row, 1)
+        if ip_item:
+            rect = self.table.visualItemRect(ip_item)
+            global_pos = self.table.viewport().mapToGlobal(rect.center())
+            QToolTip.showText(global_pos, f"Copied: {ip_text}", self.table, rect, 1500)
+
+        # Also show in status bar
+        self.statusBar.showMessage(f"Copied to clipboard: {ip_text}", 2000)
+
     def _display_clients(self, clients):
         """Display clients in the table with optional filtering"""
         self.table.setSortingEnabled(False)
@@ -997,6 +1085,7 @@ class OmadaClientMonitor(QMainWindow):
                 c for c in clients
                 if self._current_filter in c.get('name', '').lower()
                 or self._current_filter in c.get('ip', '').lower()
+                or self._current_filter in c.get('mac', '').lower()
                 or self._current_filter in c.get('ssid', '').lower()
                 or self._current_filter in c.get('networkName', '').lower()
                 or self._current_filter in c.get('apName', '').lower()
