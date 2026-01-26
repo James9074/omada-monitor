@@ -4,6 +4,13 @@ import sys
 import os
 import json
 import re
+import random
+import collections
+import base64
+
+# Check for demo mode early (before conditional imports)
+DEMO_MODE = '--demo' in sys.argv or os.environ.get('OMADA_DEMO') == '1'
+
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                            QHBoxLayout, QTableWidget, QTableWidgetItem, QPushButton,
                            QLabel, QStatusBar, QHeaderView, QDialog, QLineEdit,
@@ -11,12 +18,80 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                            QStackedWidget, QSizePolicy)
 from PyQt6.QtCore import Qt, QTimer, QDateTime, QPropertyAnimation, QEasingCurve, pyqtSignal, QThread
 from PyQt6.QtGui import QColor, QPalette, QFont, QIcon
-from omada import Omada
-import collections
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-import base64
+
+# Only import Omada and cryptography when not in demo mode
+if not DEMO_MODE:
+    from omada import Omada
+    from cryptography.fernet import Fernet
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+else:
+    # Dummy placeholders for demo mode
+    Omada = None
+    Fernet = None
+
+
+class MockOmada:
+    """Mock Omada controller for demo/testing purposes"""
+
+    MOCK_CLIENTS = [
+        {'name': 'iPhone 14 Pro', 'ip': '192.168.1.101', 'active': True, 'connectDevType': 'ap',
+         'ssid': 'HomeNetwork', 'apName': 'Living Room AP', 'activity': 2500000,
+         'trafficDown': 15000000000, 'trafficUp': 3200000000, 'uptime': 345600},
+        {'name': 'MacBook Pro', 'ip': '192.168.1.102', 'active': True, 'connectDevType': 'ap',
+         'ssid': 'HomeNetwork', 'apName': 'Office AP', 'activity': 8500000,
+         'trafficDown': 125000000000, 'trafficUp': 28000000000, 'uptime': 604800},
+        {'name': 'iPad Air', 'ip': '192.168.1.103', 'active': True, 'connectDevType': 'ap',
+         'ssid': 'HomeNetwork', 'apName': 'Living Room AP', 'activity': 1200000,
+         'trafficDown': 8500000000, 'trafficUp': 950000000, 'uptime': 172800},
+        {'name': 'Samsung Smart TV', 'ip': '192.168.1.150', 'active': True, 'connectDevType': 'ap',
+         'ssid': 'HomeNetwork', 'apName': 'Living Room AP', 'activity': 25000000,
+         'trafficDown': 450000000000, 'trafficUp': 2500000000, 'uptime': 1209600},
+        {'name': 'PlayStation 5', 'ip': '192.168.1.151', 'active': True, 'connectDevType': 'switch',
+         'networkName': 'Gaming VLAN', 'switchName': 'Main Switch', 'port': 3, 'activity': 15000000,
+         'trafficDown': 850000000000, 'trafficUp': 125000000000, 'uptime': 86400},
+        {'name': 'Work Laptop', 'ip': '192.168.1.104', 'active': True, 'connectDevType': 'ap',
+         'ssid': 'HomeNetwork', 'apName': 'Office AP', 'activity': 5500000,
+         'trafficDown': 95000000000, 'trafficUp': 18000000000, 'uptime': 432000},
+        {'name': 'Smart Thermostat', 'ip': '192.168.1.200', 'active': True, 'connectDevType': 'ap',
+         'ssid': 'IoT_Network', 'apName': 'Basement AP', 'activity': 15000,
+         'trafficDown': 125000000, 'trafficUp': 85000000, 'uptime': 2592000},
+        {'name': 'Ring Doorbell', 'ip': '192.168.1.201', 'active': True, 'connectDevType': 'ap',
+         'ssid': 'IoT_Network', 'apName': 'Living Room AP', 'activity': 850000,
+         'trafficDown': 28000000000, 'trafficUp': 15000000000, 'uptime': 2592000},
+        {'name': 'Philips Hue Bridge', 'ip': '192.168.1.202', 'active': True, 'connectDevType': 'switch',
+         'networkName': 'IoT VLAN', 'switchName': 'Main Switch', 'port': 8, 'activity': 5000,
+         'trafficDown': 50000000, 'trafficUp': 25000000, 'uptime': 5184000},
+        {'name': 'Guest iPhone', 'ip': '192.168.2.50', 'active': True, 'connectDevType': 'ap',
+         'ssid': 'GuestNetwork', 'apName': 'Living Room AP', 'activity': 3500000,
+         'trafficDown': 2500000000, 'trafficUp': 450000000, 'uptime': 7200},
+        {'name': 'Sonos Speaker', 'ip': '192.168.1.160', 'active': True, 'connectDevType': 'ap',
+         'ssid': 'HomeNetwork', 'apName': 'Living Room AP', 'activity': 2000000,
+         'trafficDown': 85000000000, 'trafficUp': 1500000000, 'uptime': 1814400},
+        {'name': 'NAS Server', 'ip': '192.168.1.10', 'active': True, 'connectDevType': 'switch',
+         'networkName': 'Server VLAN', 'switchName': 'Main Switch', 'port': 1, 'activity': 45000000,
+         'trafficDown': 2500000000000, 'trafficUp': 1800000000000, 'uptime': 7776000},
+    ]
+
+    def __init__(self, baseurl=None, site=None, verify=False):
+        self.baseurl = baseurl or "https://demo.omada.local"
+        self.site = site or "Demo Site"
+
+    def login(self, username=None, password=None):
+        pass  # Always succeeds in demo mode
+
+    def logout(self):
+        pass
+
+    def getSiteClients(self):
+        """Return mock clients with slightly randomized activity"""
+        clients = []
+        for client in self.MOCK_CLIENTS:
+            c = client.copy()
+            # Add some variance to activity
+            c['activity'] = int(c['activity'] * random.uniform(0.7, 1.3))
+            clients.append(c)
+        return clients
 
 
 # Modern Dark Theme Stylesheet
@@ -294,6 +369,11 @@ QLineEdit#searchBox:focus {
 
 class CredentialManager:
     def __init__(self):
+        # Skip initialization in demo mode
+        if DEMO_MODE:
+            self.fernet = None
+            return
+
         self.config_dir = os.path.expanduser('~/.omada-monitor')
         self.config_file = os.path.join(self.config_dir, 'credentials.enc')
         self.key_file = os.path.join(self.config_dir, 'key')
@@ -315,6 +395,9 @@ class CredentialManager:
         os.chmod(self.key_file, 0o600)
 
     def save_credentials(self, username, password, baseurl, site, verify):
+        if DEMO_MODE:
+            return  # Don't save in demo mode
+
         data = {
             'username': username,
             'password': password,
@@ -328,6 +411,9 @@ class CredentialManager:
         os.chmod(self.config_file, 0o600)
 
     def load_credentials(self):
+        if DEMO_MODE:
+            return None, None, None, None, False
+
         try:
             if os.path.exists(self.config_file):
                 with open(self.config_file, 'rb') as f:
@@ -681,9 +767,13 @@ class OmadaClientMonitor(QMainWindow):
         ('uptime',      ('UPTIME',       14)),
     ])
 
-    def __init__(self):
+    def __init__(self, demo_mode=False):
         super().__init__()
-        self.setWindowTitle("Omada Client Monitor")
+        self.demo_mode = demo_mode
+        title = "Omada Client Monitor"
+        if demo_mode:
+            title += " (Demo Mode)"
+        self.setWindowTitle(title)
         self.setGeometry(100, 100, 1300, 700)
         self.setMinimumWidth(900)
         self.setMinimumHeight(500)
@@ -694,7 +784,7 @@ class OmadaClientMonitor(QMainWindow):
         self._all_clients = []  # Store all clients for filtering
         self._current_filter = ""
 
-        # Attempt login
+        # Attempt login (skip for demo mode)
         if not self._perform_login():
             sys.exit(1)
 
@@ -702,6 +792,11 @@ class OmadaClientMonitor(QMainWindow):
 
     def _perform_login(self):
         """Perform login with iterative retry instead of recursion"""
+        # Use mock data in demo mode
+        if self.demo_mode:
+            self.omada = MockOmada()
+            return True
+
         # First try auto-login
         if self._try_auto_login():
             return True
@@ -760,7 +855,8 @@ class OmadaClientMonitor(QMainWindow):
         title_label.setObjectName("titleLabel")
         title_status_layout.addWidget(title_label)
 
-        self.status_label = QLabel("Connected to Omada Controller")
+        status_text = "Demo Mode - Sample Data" if self.demo_mode else "Connected to Omada Controller"
+        self.status_label = QLabel(status_text)
         self.status_label.setObjectName("statusLabel")
         self.status_label.setProperty("status", "connected")
         title_status_layout.addWidget(self.status_label)
@@ -1042,7 +1138,8 @@ class OmadaClientMonitor(QMainWindow):
         self._all_clients = clients
         self._display_clients(clients)
 
-        self._update_status("connected", "Connected to Omada Controller")
+        status_text = "Demo Mode - Sample Data" if self.demo_mode else "Connected to Omada Controller"
+        self._update_status("connected", status_text)
         self.refresh_button.setEnabled(True)
         self.refresh_button.setText("Refresh")
         self.statusBar.showMessage(f"Last updated: {QDateTime.currentDateTime().toString('hh:mm:ss AP')}")
@@ -1087,7 +1184,7 @@ def main():
     app.setStyle('Fusion')
     app.setStyleSheet(DARK_STYLESHEET)
 
-    window = OmadaClientMonitor()
+    window = OmadaClientMonitor(demo_mode=DEMO_MODE)
     window.show()
     sys.exit(app.exec())
 
