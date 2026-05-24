@@ -30,12 +30,19 @@ OPTIONS = {
     'packages': [
         'PyQt6',
         'cryptography',
+        'cffi',
+        'requests',
+        'charset_normalizer',
         'omada',
     ],
     'includes': [
         'PyQt6.QtCore',
         'PyQt6.QtWidgets',
         'PyQt6.QtGui',
+        # cryptography's Rust/cffi bindings need the compiled cffi backend,
+        # which py2app does not pick up automatically (standalone builds fail
+        # with "No module named '_cffi_backend'" without this).
+        '_cffi_backend',
     ],
     'excludes': [
         'tkinter',
