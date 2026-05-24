@@ -1,4 +1,5 @@
 # setup.py
+import sys
 from setuptools import setup
 import os
 import shutil
@@ -16,8 +17,10 @@ def clean_builds():
         if os.path.exists(f):
             os.remove(f)
 
-# Clean previous builds
-clean_builds()
+# Only wipe build artifacts when actually building -- importing this module
+# (e.g. for metadata) should not delete anything.
+if 'py2app' in sys.argv:
+    clean_builds()
 
 APP = ['omada_monitor.py']
 DATA_FILES = []
@@ -46,11 +49,11 @@ OPTIONS = {
         'CFBundleDisplayName': "Omada Monitor",
         'CFBundleGetInfoString': "Monitor Omada network clients",
         'CFBundleIdentifier': "com.wlan1.omadamonitor",
-        'CFBundleVersion': "1.0.0",
-        'CFBundleShortVersionString': "1.0.0",
+        'CFBundleVersion': "1.1.0",
+        'CFBundleShortVersionString': "1.1.0",
         'NSHighResolutionCapable': True,
         'NSRequiresAquaSystemAppearance': False,
-        'LSMinimumSystemVersion': '10.15',
+        'LSMinimumSystemVersion': '11.0',
         'NSHumanReadableCopyright': "Copyright © 2025, wlan1, All Rights Reserved"
     }
 }
