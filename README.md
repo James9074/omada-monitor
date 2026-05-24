@@ -3,7 +3,15 @@
 
 The Omada interface doesn't allow for quick access to connected clients. You must navigate from the home screen _every time_ you want to see a newly connected client. This is annoying when trying to determine the IP of a newly connected IoT device. 
 
-This desktop application refreses clients connected to an Omada Controller. It provides a graphical interface to view client details such as IP address, status, network name, and traffic statistics. Simply login with your controller creds, and all connected clients will be shown.
+This desktop application refreshes clients connected to an Omada Controller. It provides a graphical interface to view client details such as IP address, status, network name, and traffic statistics. Simply login with your controller creds, and all connected clients will be shown.
+
+Features:
+- Live client table (sortable by any column; your sort, selection, and scroll position are preserved across refreshes).
+- Type-ahead **filter box** to quickly find a device by name, IP, SSID, etc.
+- Right-click a row (or press ⌘C) to **copy a client's IP or MAC** to the clipboard.
+- Configurable **refresh interval** (10s / 30s / 60s / 5m) and a count of connected clients in the header.
+- Network calls run off the UI thread, so the window stays responsive; it silently re-logs-in if the controller session expires.
+- Window size, sort, and refresh interval are remembered between launches.
 
 This UI shamelessly piggybacks off Gregory Haberek's fantastic https://github.com/ghaberek/omada-api
 
@@ -33,9 +41,9 @@ Ensure you have the following installed:
     python omada_monitor.py
     ```
 
-2. The application will attempt to auto-login using saved credentials. If no credentials are saved or auto-login fails, a login dialog will appear. You'll need to entire the base url (http://<ip_or_domain.tld>) and site (Usually `Default`).
+2. The application will attempt to auto-login using saved credentials. If no credentials are saved or auto-login fails, a login dialog will appear. You'll need to enter the base url (http://<ip_or_domain.tld>) and site (Usually `Default`).
 
-The data will refresh every 30 seconds, or when "Refresh" is clicked.
+The data refreshes automatically on the interval chosen in the header (default 30 seconds), or whenever "Refresh" is clicked.
 
 ### Saving Credentials
 

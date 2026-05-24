@@ -9,7 +9,7 @@ import warnings
 import http.client
 import logging
 from configparser import ConfigParser
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from requests.cookies import RequestsCookieJar
 
@@ -25,7 +25,7 @@ logger.addHandler(ch)
 ## Omada API calls expect a timestamp in milliseconds.
 ##
 def timestamp():
-	return int( datetime.utcnow().timestamp() * 1000 )
+	return int( datetime.now(timezone.utc).timestamp() * 1000 )
 
 ##
 ## Display errorCode and optional message returned from Omada API.
@@ -450,7 +450,7 @@ class Omada:
 			params['filters.level'] = level
 
 		if module is not None:
-			if level not in ValidModuleFilters:
+			if module not in ValidModuleFilters:
 				raise TypeError('invalid module filter')
 			params['filters.module'] = module
 
@@ -538,7 +538,8 @@ class Omada:
 							     src_file,
 							     content_type),
 						    'data': (None, json.dumps(data))})
-	
+		return result
+
 	##
 	## Set new certificate for the controller
 	##
@@ -592,3 +593,10 @@ class Omada:
 	##
 	def getWirelessNetworks(self, group, site=None):
 		return self.__get( f'/sites/{self.__findKey(site)}/setting/wlans/{group}/ssids' )
+
+
+##
+## Valid filter values for getSiteAlerts / getSiteEvents.
+##
+ValidLevelFilters  = set( Omada.LevelFilter )
+ValidModuleFilters = set( Omada.ModuleFilter )
