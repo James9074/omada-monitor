@@ -7,6 +7,7 @@ import re
 import random
 import collections
 import base64
+from functools import partial
 
 # Check for demo mode early (before conditional imports)
 DEMO_MODE = '--demo' in sys.argv or os.environ.get('OMADA_DEMO') == '1'
@@ -15,9 +16,10 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                            QHBoxLayout, QTableWidget, QTableWidgetItem, QPushButton,
                            QLabel, QStatusBar, QHeaderView, QDialog, QLineEdit,
                            QFormLayout, QMessageBox, QCheckBox, QFrame, QGraphicsOpacityEffect,
-                           QStackedWidget, QSizePolicy)
-from PyQt6.QtCore import Qt, QTimer, QDateTime, QPropertyAnimation, QEasingCurve, pyqtSignal, QThread
-from PyQt6.QtGui import QColor, QPalette, QFont, QIcon
+                           QStackedWidget, QSizePolicy, QComboBox, QMenu)
+from PyQt6.QtCore import (Qt, QTimer, QDateTime, QPropertyAnimation, QEasingCurve,
+                          pyqtSignal, QThread, QSettings)
+from PyQt6.QtGui import QColor, QPalette, QFont, QIcon, QKeySequence, QShortcut
 
 # Only import Omada and cryptography when not in demo mode
 if not DEMO_MODE:
@@ -367,6 +369,16 @@ QLineEdit#searchBox:focus {
 """
 
 
+def apply_session_timeout(omada, timeout=10):
+    """Ensure every request the Omada session makes has a network timeout.
+
+    omada.py never passes ``timeout=`` to requests, so an unresponsive
+    controller would otherwise hang the worker thread indefinitely.
+    """
+    if omada is not None and hasattr(omada, 'session'):
+        omada.session.request = partial(omada.session.request, timeout=timeout)
+
+
 class CredentialManager:
     def __init__(self):
         # Skip initialization in demo mode
@@ -379,6 +391,11 @@ class CredentialManager:
         self.key_file = os.path.join(self.config_dir, 'key')
 
         os.makedirs(self.config_dir, mode=0o700, exist_ok=True)
+        # Ensure restrictive perms even if the directory already existed.
+        try:
+            os.chmod(self.config_dir, 0o700)
+        except OSError:
+            pass
 
         if not os.path.exists(self.key_file):
             self._generate_key()
@@ -388,11 +405,20 @@ class CredentialManager:
 
         self.fernet = Fernet(self.key)
 
+    @staticmethod
+    def _write_secure(path, data):
+        """Atomically create/overwrite ``path`` with 0600 perms.
+
+        Setting the mode at open time avoids the brief window where the secret
+        would be world-readable between ``open`` and a later ``chmod``.
+        """
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'wb') as f:
+            f.write(data)
+
     def _generate_key(self):
         self.key = Fernet.generate_key()
-        with open(self.key_file, 'wb') as f:
-            f.write(self.key)
-        os.chmod(self.key_file, 0o600)
+        self._write_secure(self.key_file, self.key)
 
     def save_credentials(self, username, password, baseurl, site, verify):
         if DEMO_MODE:
@@ -406,9 +432,7 @@ class CredentialManager:
             'verify': verify
         }
         encrypted_data = self.fernet.encrypt(json.dumps(data).encode())
-        with open(self.config_file, 'wb') as f:
-            f.write(encrypted_data)
-        os.chmod(self.config_file, 0o600)
+        self._write_secure(self.config_file, encrypted_data)
 
     def load_credentials(self):
         if DEMO_MODE:
@@ -432,20 +456,37 @@ class CredentialManager:
 
 
 class DataRefreshWorker(QThread):
-    """Worker thread for refreshing data without blocking UI"""
+    """Worker thread for refreshing data without blocking UI.
+
+    On failure it makes a single silent re-login attempt (when a credential
+    manager is supplied) to recover from an expired controller session, then
+    reports the original error if that also fails.
+    """
     finished = pyqtSignal(list)
     error = pyqtSignal(str)
 
-    def __init__(self, omada):
+    def __init__(self, omada, credential_manager=None):
         super().__init__()
         self.omada = omada
+        self.credential_manager = credential_manager
 
     def run(self):
         try:
-            clients = list(self.omada.getSiteClients())
-            self.finished.emit(clients)
-        except Exception as e:
-            self.error.emit(str(e))
+            self.finished.emit(list(self.omada.getSiteClients()))
+            return
+        except Exception as first_error:
+            # The controller session token may have expired -- try one re-login.
+            if self.credential_manager is not None:
+                try:
+                    username, password, _, _, _ = self.credential_manager.load_credentials()
+                    if username and password:
+                        self.omada.loginResult = None
+                        self.omada.login(username=username, password=password)
+                        self.finished.emit(list(self.omada.getSiteClients()))
+                        return
+                except Exception:
+                    pass
+            self.error.emit(str(first_error))
 
 
 class SortableIPItem(QTableWidgetItem):
@@ -698,6 +739,7 @@ class LoginDialog(QDialog):
                 site=self.site.text().strip(),
                 verify=self.verify.isChecked()
             )
+            apply_session_timeout(self.omada)
             self.omada.login(
                 username=self.username.text().strip(),
                 password=self.password.text()
@@ -767,6 +809,9 @@ class OmadaClientMonitor(QMainWindow):
         ('uptime',      ('UPTIME',       14)),
     ])
 
+    # Columns whose values are numeric and read better right-aligned.
+    NUMERIC_FIELDS = {'activity', 'trafficDown', 'trafficUp', 'uptime'}
+
     def __init__(self, demo_mode=False):
         super().__init__()
         self.demo_mode = demo_mode
@@ -784,11 +829,21 @@ class OmadaClientMonitor(QMainWindow):
         self._all_clients = []  # Store all clients for filtering
         self._current_filter = ""
 
+        # Persisted preferences (refresh interval, window geometry, sort).
+        self.settings = QSettings()
+        self._refresh_seconds = self._read_refresh_seconds()
+        uptime_col = list(self.FIELDDEF.keys()).index('uptime')
+        self._initial_sort = self._read_saved_sort() or (uptime_col, Qt.SortOrder.AscendingOrder)
+
         # Attempt login (skip for demo mode)
         if not self._perform_login():
             sys.exit(1)
 
         self.setup_ui()
+
+        geometry = self.settings.value('geometry')
+        if geometry is not None:
+            self.restoreGeometry(geometry)
 
     def _perform_login(self):
         """Perform login with iterative retry instead of recursion"""
@@ -811,12 +866,13 @@ class OmadaClientMonitor(QMainWindow):
                 saved_baseurl or "", saved_site or "", saved_verify
             )
 
+            # exec() returns Accepted only after a successful login (the dialog
+            # keeps itself open on failure), so a single call is enough.
             if dialog.exec() == QDialog.DialogCode.Accepted and dialog.was_successful():
                 self.omada = dialog.get_omada()
                 return True
-            elif dialog.exec() != QDialog.DialogCode.Accepted:
-                # User cancelled
-                return False
+            # User cancelled / closed the dialog.
+            return False
 
     def _try_auto_login(self):
         """Attempt to login with saved credentials"""
@@ -830,6 +886,7 @@ class OmadaClientMonitor(QMainWindow):
                     site=saved_site,
                     verify=saved_verify
                 )
+                apply_session_timeout(self.omada)
                 self.omada.login(username=saved_username, password=saved_password)
                 return True
             except Exception as e:
@@ -876,6 +933,16 @@ class OmadaClientMonitor(QMainWindow):
 
         header_layout.addSpacing(8)
 
+        # Refresh interval selector
+        self.interval_combo = QComboBox()
+        for label, secs in [("10s", 10), ("30s", 30), ("60s", 60), ("5m", 300)]:
+            self.interval_combo.addItem(label, secs)
+        idx = self.interval_combo.findData(self._refresh_seconds)
+        if idx >= 0:
+            self.interval_combo.setCurrentIndex(idx)
+        self.interval_combo.currentIndexChanged.connect(self._on_interval_changed)
+        header_layout.addWidget(self.interval_combo)
+
         # Buttons
         self.login_button = QPushButton("Settings")
         self.login_button.setObjectName("secondaryButton")
@@ -909,6 +976,14 @@ class OmadaClientMonitor(QMainWindow):
         self.table.setSortingEnabled(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setShowGrid(False)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+
+        # Right-click to copy, plus Cmd/Ctrl+C on the selection.
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
+        copy_shortcut = QShortcut(QKeySequence.StandardKey.Copy, self.table)
+        copy_shortcut.activated.connect(self._copy_selection)
+
         self.stack.addWidget(self.table)
 
         # Empty state
@@ -950,10 +1025,10 @@ class OmadaClientMonitor(QMainWindow):
         self.client_count_label = QLabel()
         self.statusBar.addPermanentWidget(self.client_count_label)
 
-        # Auto-refresh timer (every 30 seconds)
+        # Auto-refresh timer (interval is user-configurable)
         self.timer = QTimer()
         self.timer.timeout.connect(self.refresh_data)
-        self.timer.start(30000)
+        self.timer.start(self._refresh_seconds * 1000)
 
         # Initial data load
         self.refresh_data()
@@ -986,7 +1061,13 @@ class OmadaClientMonitor(QMainWindow):
         self._display_clients(self._all_clients)
 
     def _display_clients(self, clients):
-        """Display clients in the table with optional filtering"""
+        """Render clients in the table, preserving sort/selection/scroll."""
+        header = self.table.horizontalHeader()
+        prev_sort_col = header.sortIndicatorSection()
+        prev_sort_order = header.sortIndicatorOrder()
+        prev_selected_mac = self._selected_mac()
+        prev_scroll = self.table.verticalScrollBar().value()
+
         self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
 
@@ -1009,17 +1090,23 @@ class OmadaClientMonitor(QMainWindow):
                 self.empty_label.setText("No clients connected")
             self.stack.setCurrentIndex(1)  # Show empty state
             self.client_count_label.setText("")
+            self.table.setSortingEnabled(True)
             return
 
         self.stack.setCurrentIndex(0)  # Show table
         self.table.setRowCount(len(filtered_clients))
 
+        name_col = list(self.FIELDDEF.keys()).index('name')
         for row, client in enumerate(filtered_clients):
             formatted_client = self.format_client_data(client)
 
             for col, (field, _) in enumerate(self.FIELDDEF.items()):
                 item = self.create_table_item(field, formatted_client[field], client)
-                item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                if field in self.NUMERIC_FIELDS:
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                else:
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                item.setToolTip(item.text())
 
                 # Color code the status
                 if field == 'active':
@@ -1030,7 +1117,25 @@ class OmadaClientMonitor(QMainWindow):
 
                 self.table.setItem(row, col, item)
 
+            # Stash the MAC on the row so selection/copy can use it.
+            name_item = self.table.item(row, name_col)
+            if name_item is not None:
+                name_item.setData(Qt.ItemDataRole.UserRole, client.get('mac', ''))
+
         self.table.setSortingEnabled(True)
+
+        # Apply the saved sort once on first render, then the user's live sort.
+        if self._initial_sort is not None:
+            sort_col, sort_order = self._initial_sort
+            self._initial_sort = None
+            self.table.sortItems(sort_col, sort_order)
+        elif prev_sort_col >= 0:
+            self.table.sortItems(prev_sort_col, prev_sort_order)
+
+        # Restore selection + scroll position.
+        if prev_selected_mac:
+            self._select_by_mac(prev_selected_mac)
+        self.table.verticalScrollBar().setValue(prev_scroll)
 
         # Update client count
         total = len(clients)
@@ -1041,21 +1146,24 @@ class OmadaClientMonitor(QMainWindow):
             self.client_count_label.setText(f"{total} client{'s' if total != 1 else ''} connected")
 
     def format_client_data(self, client):
+        # Reference the static helpers via the class so this works even when
+        # called without a real instance (e.g. format_client_data(None, c)).
+        cls = OmadaClientMonitor
         formatted = {}
         formatted['name'] = client.get('name', '--')
         formatted['ip'] = client.get('ip', '--')
-        formatted['active'] = self.format_status(client.get('active', False))
+        formatted['active'] = cls.format_status(client.get('active', False))
 
         if client.get('connectDevType') == 'ap':
             formatted['networkName'] = client.get('ssid', '--')
         else:
             formatted['networkName'] = client.get('networkName', '--')
 
-        formatted['port'] = self.format_port(client)
-        formatted['activity'] = self.format_size(client.get('activity', 0), 'B/s')
-        formatted['trafficDown'] = self.format_size(client.get('trafficDown', 0), 'B')
-        formatted['trafficUp'] = self.format_size(client.get('trafficUp', 0), 'B')
-        formatted['uptime'] = self.format_time(client.get('uptime', 0))
+        formatted['port'] = cls.format_port(client)
+        formatted['activity'] = cls.format_size(client.get('activity', 0), 'B/s')
+        formatted['trafficDown'] = cls.format_size(client.get('trafficDown', 0), 'B')
+        formatted['trafficUp'] = cls.format_size(client.get('trafficUp', 0), 'B')
+        formatted['uptime'] = cls.format_time(client.get('uptime', 0))
 
         return formatted
 
@@ -1067,8 +1175,11 @@ class OmadaClientMonitor(QMainWindow):
     def format_port(client):
         if client.get('connectDevType') == 'ap':
             return client.get('apName', '--')
-        elif 'switchName' in client and 'port' in client:
-            return f"{client['switchName']} Port {client['port']}"
+        # Wired client on a switch: show the port even when the switch name is
+        # missing or reported under a different key by the controller.
+        if client.get('port') is not None:
+            switch = client.get('switchName') or client.get('switchMac') or 'Switch'
+            return f"{switch} Port {client['port']}"
         return '--'
 
     @staticmethod
@@ -1125,10 +1236,13 @@ class OmadaClientMonitor(QMainWindow):
         self._update_status("loading", "Refreshing...")
         self.refresh_button.setEnabled(False)
         self.refresh_button.setText("Loading...")
-        self.stack.setCurrentIndex(2)  # Show loading state
+        # Only show the full-screen loading state on the very first load;
+        # afterwards keep the existing table visible while refreshing.
+        if not self._all_clients:
+            self.stack.setCurrentIndex(2)
 
-        # Create and start worker
-        self.refresh_worker = DataRefreshWorker(self.omada)
+        # Create and start worker (credential manager enables silent re-login)
+        self.refresh_worker = DataRefreshWorker(self.omada, self.credential_manager)
         self.refresh_worker.finished.connect(self._on_refresh_complete)
         self.refresh_worker.error.connect(self._on_refresh_error)
         self.refresh_worker.start()
@@ -1162,11 +1276,109 @@ class OmadaClientMonitor(QMainWindow):
 
         self.statusBar.showMessage(display_msg)
 
-        # Show empty state with error
-        self.empty_label.setText("Unable to load clients")
-        self.stack.setCurrentIndex(1)
+        # Keep showing the last-known clients if we have any; only fall back to
+        # the empty state when we never managed to load anything.
+        if self._all_clients:
+            self._display_clients(self._all_clients)
+        else:
+            self.empty_label.setText("Unable to load clients")
+            self.stack.setCurrentIndex(1)
+
+    def _read_refresh_seconds(self):
+        try:
+            secs = int(self.settings.value('refreshSeconds', 30))
+        except (TypeError, ValueError):
+            secs = 30
+        return secs if secs in (10, 30, 60, 300) else 30
+
+    def _read_saved_sort(self):
+        col = self.settings.value('sortColumn')
+        order = self.settings.value('sortOrder')
+        if col is None or order is None:
+            return None
+        try:
+            return (int(col), Qt.SortOrder(int(order)))
+        except (TypeError, ValueError):
+            return None
+
+    def _on_interval_changed(self):
+        secs = self.interval_combo.currentData()
+        if secs:
+            self._refresh_seconds = secs
+            self.timer.setInterval(secs * 1000)
+
+    def _selected_mac(self):
+        items = self.table.selectedItems()
+        if not items:
+            return None
+        name_col = list(self.FIELDDEF.keys()).index('name')
+        name_item = self.table.item(items[0].row(), name_col)
+        return name_item.data(Qt.ItemDataRole.UserRole) if name_item else None
+
+    def _select_by_mac(self, mac):
+        name_col = list(self.FIELDDEF.keys()).index('name')
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, name_col)
+            if item and item.data(Qt.ItemDataRole.UserRole) == mac:
+                self.table.selectRow(row)
+                return
+
+    def _show_context_menu(self, pos):
+        row = self.table.rowAt(pos.y())
+        if row < 0:
+            return
+        ip_col = list(self.FIELDDEF.keys()).index('ip')
+        name_col = list(self.FIELDDEF.keys()).index('name')
+        ip_item = self.table.item(row, ip_col)
+        name_item = self.table.item(row, name_col)
+        ip = ip_item.text() if ip_item else ''
+        mac = name_item.data(Qt.ItemDataRole.UserRole) if name_item else ''
+
+        menu = QMenu(self)
+        copy_ip = menu.addAction(f"Copy IP ({ip})" if ip and ip != '--' else "Copy IP")
+        copy_mac = menu.addAction(f"Copy MAC ({mac})" if mac else "Copy MAC")
+        copy_mac.setEnabled(bool(mac))
+        copy_row = menu.addAction("Copy Row")
+
+        chosen = menu.exec(self.table.viewport().mapToGlobal(pos))
+        clipboard = QApplication.clipboard()
+        if chosen == copy_ip:
+            clipboard.setText(ip)
+        elif chosen == copy_mac:
+            clipboard.setText(mac)
+        elif chosen == copy_row:
+            cells = []
+            for col in range(self.table.columnCount()):
+                item = self.table.item(row, col)
+                cells.append(item.text() if item else '')
+            clipboard.setText('\t'.join(cells))
+
+    def _copy_selection(self):
+        ranges = self.table.selectedRanges()
+        if not ranges:
+            return
+        lines = []
+        for rng in ranges:
+            for r in range(rng.topRow(), rng.bottomRow() + 1):
+                cells = []
+                for c in range(rng.leftColumn(), rng.rightColumn() + 1):
+                    item = self.table.item(r, c)
+                    cells.append(item.text() if item else '')
+                lines.append('\t'.join(cells))
+        QApplication.clipboard().setText('\n'.join(lines))
+
+    def _save_settings(self):
+        self.settings.setValue('geometry', self.saveGeometry())
+        self.settings.setValue('refreshSeconds', self._refresh_seconds)
+        header = self.table.horizontalHeader()
+        self.settings.setValue('sortColumn', header.sortIndicatorSection())
+        self.settings.setValue('sortOrder', int(header.sortIndicatorOrder().value))
 
     def closeEvent(self, event):
+        try:
+            self._save_settings()
+        except Exception:
+            pass
         self.timer.stop()
         if self.refresh_worker:
             self.refresh_worker.quit()
@@ -1183,6 +1395,8 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
     app.setStyleSheet(DARK_STYLESHEET)
+    app.setOrganizationName('wlan1')
+    app.setApplicationName('OmadaMonitor')
 
     window = OmadaClientMonitor(demo_mode=DEMO_MODE)
     window.show()
