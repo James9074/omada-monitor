@@ -8,7 +8,7 @@ This desktop application refreshes clients connected to an Omada Controller. It 
 
 This UI shamelessly piggybacks off Gregory Haberek's fantastic https://github.com/ghaberek/omada-api
 
-<img width="1245" height="722" alt="image" src="https://github.com/user-attachments/assets/463d1a8e-bfbb-4272-b41c-17095a4a7b24" />
+<img width="1245" height="722" alt="image" src="./screenshot.png" />
 
 ## Features
 
